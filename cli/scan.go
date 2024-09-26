@@ -48,7 +48,17 @@ var vanillaScanCmd = &cobra.Command{
 			return
 		}
 
-		pkg.VanillaScan(host)
+		res, err := pkg.VanillaScan(host)
+
+		if err != nil {
+			fmt.Printf("ERROR: %s", err.Error())
+			return
+		}
+
+		for _, result := range res {
+			fmt.Println(result)
+		}
+
 	},
 }
 

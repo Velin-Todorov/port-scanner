@@ -27,7 +27,6 @@ func VanillaScan(host string) ([]string, error) {
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, portStr), 5*time.Second)
 
 		if err != nil {
-			fmt.Printf("connecting to %s on port %s failed", host, portStr)
 			continue
 		}
 		
