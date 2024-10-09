@@ -1,9 +1,6 @@
 package config
 
-import (
-	"flag"
-	"time"
-)
+import ()
 
 // Config holds the configuration for the port scanner
 type Config struct {

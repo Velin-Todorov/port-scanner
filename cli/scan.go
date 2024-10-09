@@ -2,7 +2,8 @@ package cli
 
 import (
 	"fmt"
-	"port-scanner/pkg"
+	"port-scanner/portScanner"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -25,7 +26,7 @@ var simpleScanCmd = &cobra.Command{
 			return
 		}
 
-		res, err := pkg.SimpleScan(host, port)
+		res, err := portScanner.SimpleScan(host, port)
 
 		if err != nil {
 			fmt.Println(res)
@@ -38,17 +39,30 @@ var simpleScanCmd = &cobra.Command{
 }
 
 var vanillaScanCmd = &cobra.Command{
-	Use: "scanAll",
+	Use: "vscan",
 	Short: "Checks all ports on a given host",
 	Run: func(cmd *cobra.Command, args []string) {
-		host, _ := cmd.Flags().GetString("host")
-
-		if len(host) == 0 {
+		host, err := cmd.Flags().GetString("host")
+		if err != nil || host == "" {
 			fmt.Println("No host passed")
 			return
 		}
 
-		res, err := pkg.VanillaScan(host)
+		ports, err := cmd.Flags().GetInt32("ports")
+
+		if err != nil || ports <= 0 {
+			fmt.Printf("Invalid ports value: %v\n", err)
+			return
+		}
+
+		timeoutSeconds, err := cmd.Flags().GetInt32("timeout")
+		if err != nil || timeoutSeconds < 0 {
+			fmt.Printf("Invalid timeout value: %v\n", err)
+			return
+		}
+		
+		timeout := time.Duration(timeoutSeconds) * time.Second
+		res, err := portScanner.VanillaScan(host, ports, timeout)
 
 		if err != nil {
 			fmt.Printf("ERROR: %s", err.Error())
@@ -69,4 +83,9 @@ func init() {
 
 	rootCmd.AddCommand(vanillaScanCmd)
 	vanillaScanCmd.Flags().String("host", "", "Host to check for open ports")
+	vanillaScanCmd.Flags().Int32("ports", portScanner.DEFAULT_CONCURENT_PORTS, "How many concurrent ports at once")
+	vanillaScanCmd.Flags().Int32("timeout", int32(portScanner.DEFAULT_TIMEOUT.Seconds()), "How long to try to connect to a port")
+
+	vanillaScanCmd.MarkFlagRequired("host")
+
 }
