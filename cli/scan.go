@@ -76,6 +76,37 @@ var vanillaScanCmd = &cobra.Command{
 	},
 }
 
+var sweepScanCmd = &cobra.Command{
+	Use: "swpscan",
+	Short: "Performs a sweep scan",
+	Run: func(cmd *cobra.Command, args []string) {
+		hosts, err := cmd.Flags().GetString("hosts")
+
+		if err != nil || len(hosts) == 0 {
+			fmt.Println("No hosts passed")
+			return
+		}
+
+		port, err := cmd.Flags().GetInt("port")
+
+		if err != nil || port <= 0 {
+			fmt.Printf("Invalid port value: %v\n", err)
+			return
+		}
+
+		res, err := portScanner.SweepScan(hosts, port)
+
+		if err != nil {
+			fmt.Printf("ERROR: %s", err.Error())
+		}
+
+		for _, result := range res {
+			fmt.Println(result)
+		}
+	},
+
+}
+
 func init() {
 	rootCmd.AddCommand(simpleScanCmd)
 	simpleScanCmd.Flags().String("host", "", "Host to check for open ports")
@@ -88,4 +119,10 @@ func init() {
 
 	vanillaScanCmd.MarkFlagRequired("host")
 
+	rootCmd.AddCommand(sweepScanCmd)
+	sweepScanCmd.Flags().String("hosts", "", "Host to check for open ports")
+	sweepScanCmd.Flags().Int("port", 0,"Port to be checked if opened")
+
+	sweepScanCmd.MarkFlagRequired("hosts")
+	sweepScanCmd.MarkFlagRequired("port")
 }

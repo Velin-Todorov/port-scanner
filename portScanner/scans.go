@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -14,7 +15,7 @@ var (
 )
 
 func SimpleScan(host string, port string) (string, error) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 5*time.Second)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 5*time.Millisecond)
 
 	if err != nil {
 		return fmt.Sprintf("Connecting to %s on port %s failed", host, port), err
@@ -41,7 +42,7 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 		close(portCh)
 	}()
 
-	for i:=0; i < int(maxConcurrentPorts); i++ {
+	for i := 0; i < int(maxConcurrentPorts); i++ {
 		wg.Add(1)
 
 		// Consumer
@@ -55,7 +56,7 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 				}
 				conn.Close()
 				result := fmt.Sprintf("Port %s on host %s is open", portStr, host)
-				resultCh <- result		
+				resultCh <- result
 			}
 		}()
 	}
@@ -70,10 +71,44 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 		openPorts = append(openPorts, result)
 		mu.Unlock()
 	}
-	
+
 	if len(openPorts) == 0 {
 		return nil, fmt.Errorf("no open ports on host %s", host)
 	}
 
 	return openPorts, nil
+}
+
+func SweepScan(hosts string, port int) ([]string, error) {
+
+	var hostsWithOpenPort []string
+	splitHosts := strings.Split(hosts, ",")
+	portAsString := strconv.Itoa(port)
+
+	for _, host := range splitHosts {
+		res, err := SimpleScan(host, portAsString)
+
+		if err != nil {
+			fmt.Sprintf("Something went wrong when scanning host: %s", host)
+		}
+		hostsWithOpenPort = append(hostsWithOpenPort, res)
+	}
+
+	return hostsWithOpenPort, nil
+}
+
+func GenerateIPs(host string) ([]string, error) {
+	octets := strings.Split(host, ".")
+	var addresses []string
+
+	for _, octet := range octets {
+		if octet == "*" {
+			wildCardRange := make([]int, 256)
+
+			for i := 0; i < 256; i++ {
+				wildCardRange[i] = i
+			}
+			addresses = append(addresses, )
+		}
+	}
 }
