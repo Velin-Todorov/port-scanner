@@ -104,12 +104,26 @@ func SweepScan(hosts string, port int) ([]string, error) {
 			// which is the broadcast address
 			firstUsableIPAddress := make(net.IP, len(ip))
 			copy(firstUsableIPAddress, ip)
-			generateIPs(firstUsableIPAddress)
-			
-			fmt.Println(ipnet)
+			generateNextIP(firstUsableIPAddress)
+
+			// Calculate the last usable IP. Same as above reasons.
+			// Its the broadcast address.
+
+			// calculate the broadcast IP, since the net pkg does not have it :/
+			broadcastIP := make(net.IP, len(ip))
+			copy(broadcastIP, ip)
+			calculateBroadcastIP(broadcastIP, ipnet)
+
+			fmt.Println(broadcastIP);
+
+			lastUsableIPAddress := make(net.IP, len(broadcastIP))
+			copy(lastUsableIPAddress, ip)
+			generatePreviousIP(lastUsableIPAddress)
+
+			fmt.Println(lastUsableIPAddress)
+		
 			count := 0
-			for firstUsableIPAddress := firstUsableIPAddress.Mask(ipnet.Mask); ipnet.Contains(firstUsableIPAddress); generateIPs(firstUsableIPAddress){
-				fmt.Println(firstUsableIPAddress)
+			for firstUsableIPAddress := firstUsableIPAddress.Mask(ipnet.Mask); ipnet.Contains(firstUsableIPAddress); generateNextIP(firstUsableIPAddress){
 				count++
 			}
 
@@ -143,11 +157,30 @@ func determineCIDR(octets int) int {
 	return cidr
 }
 
-func generateIPs(ipAddress net.IP) {
+func generateNextIP(ipAddress net.IP) {
 	for i := len(ipAddress) - 1; i >= 0; i-- {
 		ipAddress[i]++
+		// Check if there is overflow
+		// if there is no overflow, then we are done
+		// else continue to the next byte
 		if ipAddress[i] > 0 {
 			break
 		}
 	}
 }
+
+func generatePreviousIP(ipAddress net.IP) {
+	for j := len(ipAddress) - 1; j >= 0; j-- {
+        if ipAddress[j] > 0 {
+            ipAddress[j]--
+            break
+        }
+        ipAddress[j] = 255
+    }
+}
+
+func calculateBroadcastIP (broadcastIP net.IP, ipnet *net.IPNet) {
+	for i := range broadcastIP {
+		broadcastIP[i] |= ^ipnet.Mask[i]
+	}
+} 
