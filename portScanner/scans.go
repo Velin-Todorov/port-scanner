@@ -2,11 +2,13 @@ package portScanner
 
 import (
 	"fmt"
+	"math"
 	"net"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"log"
 )
 
 var (
@@ -86,29 +88,66 @@ func SweepScan(hosts string, port int) ([]string, error) {
 	portAsString := strconv.Itoa(port)
 
 	for _, host := range splitHosts {
-		res, err := SimpleScan(host, portAsString)
+		if strings.Contains(host, "*") {
+			stars := strings.Count(host, "*")
+			numberOfOctetsSet := 4 - stars
+			cidr := determineCIDR(numberOfOctetsSet)
+			newIPAddr := strings.ReplaceAll(host, "*", "0") + "/" + strconv.Itoa(cidr)
 
-		if err != nil {
-			fmt.Sprintf("Something went wrong when scanning host: %s", host)
+			ip, ipnet, err := net.ParseCIDR(newIPAddr)
+			if err != nil {
+				log.Fatal(err)
+			}
+			
+			// Calculate the first usable IP. I need to exclude the first one
+			// since its the network address to identify the subnet and the last one
+			// which is the broadcast address
+			firstUsableIPAddress := make(net.IP, len(ip))
+			copy(firstUsableIPAddress, ip)
+			generateIPs(firstUsableIPAddress)
+			
+			fmt.Println(ipnet)
+			count := 0
+			for firstUsableIPAddress := firstUsableIPAddress.Mask(ipnet.Mask); ipnet.Contains(firstUsableIPAddress); generateIPs(firstUsableIPAddress){
+				fmt.Println(firstUsableIPAddress)
+				count++
+			}
+
+			// to verify at the end if the list of IP addrs has the expected length
+			possibleIpAddressesCount := math.Pow(2, float64((32-(numberOfOctetsSet*8)))) - 2
+
+			fmt.Println(count == int(possibleIpAddressesCount))
+
 		}
-		hostsWithOpenPort = append(hostsWithOpenPort, res)
 	}
+
+	fmt.Println(portAsString)
 
 	return hostsWithOpenPort, nil
 }
 
-func GenerateIPs(host string) ([]string, error) {
-	octets := strings.Split(host, ".")
-	var addresses []string
+func determineCIDR(octets int) int {
+	cidr := 0
 
-	for _, octet := range octets {
-		if octet == "*" {
-			wildCardRange := make([]int, 256)
+	switch octets {
+	case 3:
+		cidr = 24
 
-			for i := 0; i < 256; i++ {
-				wildCardRange[i] = i
-			}
-			addresses = append(addresses, )
+	case 2:
+		cidr = 16
+
+	case 1: 
+		cidr = 8
+	}
+
+	return cidr
+}
+
+func generateIPs(ipAddress net.IP) {
+	for i := len(ipAddress) - 1; i >= 0; i-- {
+		ipAddress[i]++
+		if ipAddress[i] > 0 {
+			break
 		}
 	}
 }
