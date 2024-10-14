@@ -94,6 +94,9 @@ func SweepScan(hosts string, port int) ([]string, error) {
 			cidr := determineCIDR(numberOfOctetsSet)
 			newIPAddr := strings.ReplaceAll(host, "*", "0") + "/" + strconv.Itoa(cidr)
 
+
+			fmt.Println(newIPAddr)
+
 			ip, ipnet, err := net.ParseCIDR(newIPAddr)
 			if err != nil {
 				log.Fatal(err)
@@ -106,26 +109,18 @@ func SweepScan(hosts string, port int) ([]string, error) {
 			copy(firstUsableIPAddress, ip)
 			generateNextIP(firstUsableIPAddress)
 
+			fmt.Println(firstUsableIPAddress)
+
 			// Calculate the last usable IP. Same as above reasons.
 			// Its the broadcast address.
 
 			// calculate the broadcast IP, since the net pkg does not have it :/
-			broadcastIP := make(net.IP, len(ip))
-			copy(broadcastIP, ip)
-			calculateBroadcastIP(broadcastIP, ipnet)
-
-			fmt.Println(broadcastIP);
-
-			lastUsableIPAddress := make(net.IP, len(broadcastIP))
-			copy(lastUsableIPAddress, ip)
-			generatePreviousIP(lastUsableIPAddress)
-
-			fmt.Println(lastUsableIPAddress)
-		
+			
 			count := 0
-			for firstUsableIPAddress := firstUsableIPAddress.Mask(ipnet.Mask); ipnet.Contains(firstUsableIPAddress); generateNextIP(firstUsableIPAddress){
+			for firstUsableIPAddress := firstUsableIPAddress.Mask(net.IPMask(ip)); ipnet.Contains(firstUsableIPAddress); generateNextIP(firstUsableIPAddress){
 				count++
 			}
+
 
 			// to verify at the end if the list of IP addrs has the expected length
 			possibleIpAddressesCount := math.Pow(2, float64((32-(numberOfOctetsSet*8)))) - 2
