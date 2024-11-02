@@ -2,98 +2,63 @@ package utils
 
 import (
 	"fmt"
-	"log"
-	"net"
-	"strings"
-	"sync"
+	"strconv"
+	"math"
+	// "time"
+	// "errors"
+	// "strings"
+	// "sync"
 )
 
-func GenerateNextIP(ipAddress net.IP) net.IP {
+func determineWildcards(octets []string) []int {
+	wildcards := []int{}
+	for idx, octet := range octets {
+		if octet == "*" {
+			wildcards = append(wildcards, idx)
+		}	
+	}
+	return wildcards
+}
 
-	for i := len(ipAddress) - 1; i >= 0; i-- {
-		ipAddress[i]++
-		// Check if there is overflow
-		// if there is no overflow, then we are done
-		// else continue to the next byte
-		if ipAddress[i] > 0 {
-			break
+func determineFixedOctets(octets []string) ([]int, error) {
+	fixedOctets := make([]int, 4)
+
+	// Parse fixed octet values
+	for i, octet := range octets {
+		if octet != "*" {
+			val, err := strconv.Atoi(octet)
+			if err != nil || val < 0 || val > 255 {
+				fmt.Printf("Invalid IP format: %s\n", octet)
+				return []int{}, err
+			}
+			fixedOctets[i] = val
 		}
 	}
-	return ipAddress
+	return fixedOctets, nil
 }
 
-func GenerateFirstUsableIP(ipAddress net.IP, cidr int) net.IP {
-	// Calculate the first usable IP. I need to exclude the first one
-	// since its the network address to identify the subnet
-	ipAddressCopy := make(net.IP, len(ipAddress))
-	copy(ipAddressCopy, ipAddress)
 
-	firstIP := GenerateNextIP(ipAddressCopy)
-	return firstIP
-}
+// Producer
+func GenerateIPs(octets []string, ipCh chan <- string) {
+	wildcards := determineWildcards(octets)
+	fixedOctets, _ := determineFixedOctets(octets)
 
-func GeneratePreviousIP(ipAddress net.IP) net.IP {
-	for j := len(ipAddress) - 1; j >= 0; j-- {
-		if ipAddress[j] > 0 {
-			ipAddress[j]--
-			break
+	totalCombinations := int(math.Pow(256, float64(len(wildcards))))
+
+	for i := 1; i < totalCombinations - 1; i++ {
+		address := make([]int, len(fixedOctets))
+		copy(address, fixedOctets) 
+
+		for j, pos := range wildcards {
+			address[pos] = (i >> (j * 8)) & 0xFF 
 		}
-		ipAddress[j] = 255
+
+		ipAddress := fmt.Sprintf("%d.%d.%d.%d", address[0], address[1], address[2], address[3])
+		ipCh <- ipAddress
+		// time.Sleep(1 * time.Millisecond)
 	}
-
-	return ipAddress
-}
-
-func GenerateLastUsableIP(ipAddress net.IP) net.IP {
-	ipAddressCopy := make(net.IP, len(ipAddress))
-	copy(ipAddressCopy, ipAddress)
-
-	lastUsableIPAddress := GeneratePreviousIP(ipAddressCopy)
-
-	return lastUsableIPAddress
-}
-
-func CalculateBroadcastIP(ipnet *net.IPNet) net.IP {
-	ip := ipnet.IP.To4()
-
-	if ip == nil {
-		log.Fatal("Only IPv4 addresses are supported in this function.")
-	}
-
-	mask := ipnet.Mask
-	if len(mask) != 4 {
-		log.Fatal("Invalid mask length for IPv4.")
-	}
-
-	broadcast := make(net.IP, 4)
-	copy(broadcast, ip)
-
-	// Perform bitwise OR between IP and inverted mask to get the broadcast address
-	for i := 0; i < 4; i++ {
-		broadcast[i] |= ^mask[i]
-	}
-
-	return broadcast
-
 }
 
 func DetermineCIDR(octets int) int {
 	return octets * 8
-}
-
-func GenerateIPAddresses(octets []string, wildcardIndex int, wg *sync.WaitGroup, ch chan net.IP ) {
-	defer wg.Done()
-
-	for i := 0; i < 256; i++ {
-		currentParts := make([]string, len(octets))
-		copy(currentParts, octets)
-		currentParts[wildcardIndex] = fmt.Sprintf("%d", i)
-		generatedIP := strings.Join(currentParts, ".")
-
-		fmt.Println(generatedIP)
-		ipAddress := net.ParseIP(generatedIP)
-		ch <- ipAddress
-		
-	}	
-
 }

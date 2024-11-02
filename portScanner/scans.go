@@ -4,20 +4,23 @@ import (
 	"fmt"
 	"math"
 	"net"
+	// "runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"log"
+
+	"port-scanner/utils"
 )
 
 var (
 	DEFAULT_TIMEOUT         time.Duration = 3 * time.Second
 	DEFAULT_CONCURENT_PORTS int32         = 100
+	TOTAL_PORTS             int32         = 65535
 )
 
 func SimpleScan(host string, port string) (string, error) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 5*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 500*time.Millisecond)
 
 	if err != nil {
 		return fmt.Sprintf("Connecting to %s on port %s failed", host, port), err
@@ -33,18 +36,18 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	portCh := make(chan int, maxConcurrentPorts)
-	resultCh := make(chan string)
+	portCh := make(chan int, TOTAL_PORTS)
+	resultCh := make(chan string, TOTAL_PORTS)
 
 	// Producer
 	go func() {
-		for port := 1; port <= 65535; port++ {
+		for port := 1; port <= int(TOTAL_PORTS); port++ {
 			portCh <- port
 		}
 		close(portCh)
 	}()
 
-	for i := 0; i < int(maxConcurrentPorts); i++ {
+	for i := 0; i < int(TOTAL_PORTS); i++ {
 		wg.Add(1)
 
 		// Consumer
@@ -84,98 +87,58 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 func SweepScan(hosts string, port int) ([]string, error) {
 
 	var hostsWithOpenPort []string
+	var wg sync.WaitGroup
+
 	splitHosts := strings.Split(hosts, ",")
 	portAsString := strconv.Itoa(port)
 
 	for _, host := range splitHosts {
 		if strings.Contains(host, "*") {
-			stars := strings.Count(host, "*")
-			numberOfOctetsSet := 4 - stars
-			cidr := determineCIDR(numberOfOctetsSet)
-			newIPAddr := strings.ReplaceAll(host, "*", "0") + "/" + strconv.Itoa(cidr)
+			bufferSize := int(math.Pow(256, float64(strings.Count(host, "*"))))
 
+			ipCh := make(chan string, bufferSize)
+			resultCh := make(chan string, bufferSize)
 
-			fmt.Println(newIPAddr)
+			octets := strings.Split(host, ".")
 
-			ip, ipnet, err := net.ParseCIDR(newIPAddr)
-			if err != nil {
-				log.Fatal(err)
-			}
-			
-			// Calculate the first usable IP. I need to exclude the first one
-			// since its the network address to identify the subnet and the last one
-			// which is the broadcast address
-			firstUsableIPAddress := make(net.IP, len(ip))
-			copy(firstUsableIPAddress, ip)
-			generateNextIP(firstUsableIPAddress)
+            // Producer
+			go func() {
+				utils.GenerateIPs(octets, ipCh)
+				close(ipCh)
+			}()
 
-			fmt.Println(firstUsableIPAddress)
+			// consumer
+			for i := 0; i < bufferSize; i++ {
+				wg.Add(1)
 
-			// Calculate the last usable IP. Same as above reasons.
-			// Its the broadcast address.
-
-			// calculate the broadcast IP, since the net pkg does not have it :/
-			
-			count := 0
-			for firstUsableIPAddress := firstUsableIPAddress.Mask(net.IPMask(ip)); ipnet.Contains(firstUsableIPAddress); generateNextIP(firstUsableIPAddress){
-				count++
+				go func() {
+					defer wg.Done()
+					for ipAddress := range ipCh {
+						res, err := SimpleScan(ipAddress, portAsString)
+                        if err != nil {
+                            resultCh <- err.Error()
+                            continue
+                        }
+						resultCh <- res
+					}
+				}()
 			}
 
+			go func() {
+				wg.Wait()
+				close(resultCh)
+			}()
 
-			// to verify at the end if the list of IP addrs has the expected length
-			possibleIpAddressesCount := math.Pow(2, float64((32-(numberOfOctetsSet*8)))) - 2
+			for result := range resultCh {	
+				hostsWithOpenPort = append(hostsWithOpenPort, result)
+			}
 
-			fmt.Println(count == int(possibleIpAddressesCount))
-
+			if len(hostsWithOpenPort) == 0 {
+				return nil, fmt.Errorf("no open ports on host %s", host)
+			}
+			return hostsWithOpenPort, nil
 		}
 	}
-
-	fmt.Println(portAsString)
 
 	return hostsWithOpenPort, nil
 }
-
-func determineCIDR(octets int) int {
-	cidr := 0
-
-	switch octets {
-	case 3:
-		cidr = 24
-
-	case 2:
-		cidr = 16
-
-	case 1: 
-		cidr = 8
-	}
-
-	return cidr
-}
-
-func generateNextIP(ipAddress net.IP) {
-	for i := len(ipAddress) - 1; i >= 0; i-- {
-		ipAddress[i]++
-		// Check if there is overflow
-		// if there is no overflow, then we are done
-		// else continue to the next byte
-		if ipAddress[i] > 0 {
-			break
-		}
-	}
-}
-
-func generatePreviousIP(ipAddress net.IP) {
-	for j := len(ipAddress) - 1; j >= 0; j-- {
-        if ipAddress[j] > 0 {
-            ipAddress[j]--
-            break
-        }
-        ipAddress[j] = 255
-    }
-}
-
-func calculateBroadcastIP (broadcastIP net.IP, ipnet *net.IPNet) {
-	for i := range broadcastIP {
-		broadcastIP[i] |= ^ipnet.Mask[i]
-	}
-} 
