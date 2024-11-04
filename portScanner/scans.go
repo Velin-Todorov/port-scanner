@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"net"
-	// "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -13,13 +12,27 @@ import (
 	"port-scanner/utils"
 )
 
+type Scanner interface {
+	SimpleScan(host string, port string) (string, error)
+	VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) ([]string, error)
+	SweepScan(hosts string, port string) ([]string, error)
+}
+
+type PortScanner struct {}
+
+
+func NewPortScanner() *PortScanner{
+	portScanner := new(PortScanner)
+	return portScanner
+}
+
 var (
 	DEFAULT_TIMEOUT         time.Duration = 3 * time.Second
 	DEFAULT_CONCURENT_PORTS int32         = 100
 	TOTAL_PORTS             int32         = 65535
 )
 
-func SimpleScan(host string, port string) (string, error) {
+func (ps *PortScanner) SimpleScan(host string, port string) (string, error) {
 	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, port), 500*time.Millisecond)
 
 	if err != nil {
@@ -31,7 +44,7 @@ func SimpleScan(host string, port string) (string, error) {
 	return fmt.Sprintf("Port %s on host %s is opened", port, host), nil
 }
 
-func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) ([]string, error) {
+func (ps *PortScanner) VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) ([]string, error) {
 	var openPorts []string
 	var mu sync.Mutex
 	var wg sync.WaitGroup
@@ -84,7 +97,7 @@ func VanillaScan(host string, maxConcurrentPorts int32, timeout time.Duration) (
 	return openPorts, nil
 }
 
-func SweepScan(hosts string, port int) ([]string, error) {
+func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 
 	var hostsWithOpenPort []string
 	var wg sync.WaitGroup
@@ -93,6 +106,7 @@ func SweepScan(hosts string, port int) ([]string, error) {
 	portAsString := strconv.Itoa(port)
 
 	for _, host := range splitHosts {
+		// wildcard addresses
 		if strings.Contains(host, "*") {
 			bufferSize := int(math.Pow(256, float64(strings.Count(host, "*"))))
 
@@ -114,7 +128,7 @@ func SweepScan(hosts string, port int) ([]string, error) {
 				go func() {
 					defer wg.Done()
 					for ipAddress := range ipCh {
-						res, err := SimpleScan(ipAddress, portAsString)
+						res, err := ps.SimpleScan(ipAddress, portAsString)
                         if err != nil {
                             resultCh <- err.Error()
                             continue
@@ -137,6 +151,29 @@ func SweepScan(hosts string, port int) ([]string, error) {
 				return nil, fmt.Errorf("no open ports on host %s", host)
 			}
 			return hostsWithOpenPort, nil
+		} else if strings.Contains(host, "/") {
+            // CIDR hosts
+			ipAddress, ipNet, _ := net.ParseCIDR(host)
+			mask, _ := ipNet.Mask.Size()
+			hostBits := 32 - mask
+			totalHostAddresses := (1 << hostBits) - 2
+			ipAddress4 := ipAddress.To4()
+
+
+			baseAddress := uint32(ipAddress4[0])<<24 | uint32(ipAddress4[1])<<16 | uint32(ipAddress4[2])<<8 | uint32(ipAddress4[3])
+			
+			for i := 0; i < totalHostAddresses; i++{
+				hostIp := baseAddress + uint32(i)
+
+				newAddress := net.IPv4(byte(hostIp>>24), byte((hostIp>>16)&0xFF), byte((hostIp>>8)&0xFF), byte(hostIp&0xFF))
+				scan, _ := ps.SimpleScan(newAddress.String(), portAsString)
+				hostsWithOpenPort = append(hostsWithOpenPort, scan)
+			}
+
+        } else {
+			// normal hosts
+			scan, _:= ps.SimpleScan(host, portAsString)
+			hostsWithOpenPort = append(hostsWithOpenPort, scan)
 		}
 	}
 
