@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+    "syscall"
 
 	"port-scanner/utils"
 )
@@ -49,18 +50,18 @@ func (ps *PortScanner) VanillaScan(host string, maxConcurrentPorts int32, timeou
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
-	portCh := make(chan int, TOTAL_PORTS)
-	resultCh := make(chan string, TOTAL_PORTS)
+	portCh := make(chan int, maxConcurrentPorts)
+	resultCh := make(chan string, maxConcurrentPorts)
 
 	// Producer
 	go func() {
-		for port := 1; port <= int(TOTAL_PORTS); port++ {
+		for port := 1; port <= int(maxConcurrentPorts); port++ {
 			portCh <- port
 		}
 		close(portCh)
 	}()
 
-	for i := 0; i < int(TOTAL_PORTS); i++ {
+	for i := 0; i < int(maxConcurrentPorts); i++ {
 		wg.Add(1)
 
 		// Consumer
@@ -99,7 +100,7 @@ func (ps *PortScanner) VanillaScan(host string, maxConcurrentPorts int32, timeou
 
 func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 
-	var hostsWithOpenPort []string
+	var openPorts []string
 	var wg sync.WaitGroup
 
 	splitHosts := strings.Split(hosts, ",")
@@ -144,13 +145,13 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 			}()
 
 			for result := range resultCh {	
-				hostsWithOpenPort = append(hostsWithOpenPort, result)
+				openPorts = append(openPorts, result)
 			}
 
-			if len(hostsWithOpenPort) == 0 {
+			if len(openPorts) == 0 {
 				return nil, fmt.Errorf("no open ports on host %s", host)
 			}
-			return hostsWithOpenPort, nil
+			return openPorts, nil
 		} else if strings.Contains(host, "/") {
             // CIDR hosts
 			ipAddress, ipNet, _ := net.ParseCIDR(host)
@@ -167,15 +168,37 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 
 				newAddress := net.IPv4(byte(hostIp>>24), byte((hostIp>>16)&0xFF), byte((hostIp>>8)&0xFF), byte(hostIp&0xFF))
 				scan, _ := ps.SimpleScan(newAddress.String(), portAsString)
-				hostsWithOpenPort = append(hostsWithOpenPort, scan)
+				openPorts = append(openPorts, scan)
 			}
 
         } else {
 			// normal hosts
 			scan, _:= ps.SimpleScan(host, portAsString)
-			hostsWithOpenPort = append(hostsWithOpenPort, scan)
+			openPorts = append(openPorts, scan)
 		}
 	}
 
-	return hostsWithOpenPort, nil
+	return openPorts, nil
 }
+
+func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
+    var openPorts []string
+
+    // splitPorts := strings.Split(ports, ",")
+    // syscall.              
+    // for _, port := range splitPorts {
+        
+    // }
+
+    // craft syn pack
+    // send the syn pack
+    // check the response
+    // if we get syn/ack, then send a rst packet and mark the port as opened,
+    // otherwise, try one more time
+    // if it does not respond, then mark the port as filtered
+
+    
+    return openPorts, nil
+
+}
+

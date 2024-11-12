@@ -55,10 +55,17 @@ func GenerateIPs(octets []string, ipCh chan <- string) {
 
 		ipAddress := fmt.Sprintf("%d.%d.%d.%d", address[0], address[1], address[2], address[3])
 		ipCh <- ipAddress
-		// time.Sleep(1 * time.Millisecond)
 	}
 }
 
 func DetermineCIDR(octets int) int {
 	return octets * 8
 }
+
+// Crafting raw SYN Packet
+func CraftPacket() byte {
+
+
+}
+
+
