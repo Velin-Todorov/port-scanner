@@ -1,21 +1,44 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
-	"strconv"
 	"math"
+	"strconv"
 	// "time"
 	// "errors"
 	// "strings"
 	// "sync"
 )
 
+type TCPHeader struct {
+	Source      uint16
+	Destination uint16
+	SeqNum      uint32
+	AckNum      uint32
+	DataOffset  uint8
+	Reserved    uint8
+	ECN         uint8
+	Ctrl        uint8
+	Window      uint16
+	Checksum    uint16
+	Urgent      uint16
+	Options     []TCPOption
+}
+
+type TCPOption struct {
+	Kind   uint8
+	Length uint8
+	Data   []byte
+}
+
 func determineWildcards(octets []string) []int {
 	wildcards := []int{}
 	for idx, octet := range octets {
 		if octet == "*" {
 			wildcards = append(wildcards, idx)
-		}	
+		}
 	}
 	return wildcards
 }
@@ -37,20 +60,19 @@ func determineFixedOctets(octets []string) ([]int, error) {
 	return fixedOctets, nil
 }
 
-
 // Producer
-func GenerateIPs(octets []string, ipCh chan <- string) {
+func GenerateIPs(octets []string, ipCh chan<- string) {
 	wildcards := determineWildcards(octets)
 	fixedOctets, _ := determineFixedOctets(octets)
 
 	totalCombinations := int(math.Pow(256, float64(len(wildcards))))
 
-	for i := 1; i < totalCombinations - 1; i++ {
+	for i := 1; i < totalCombinations-1; i++ {
 		address := make([]int, len(fixedOctets))
-		copy(address, fixedOctets) 
+		copy(address, fixedOctets)
 
 		for j, pos := range wildcards {
-			address[pos] = (i >> (j * 8)) & 0xFF 
+			address[pos] = (i >> (j * 8)) & 0xFF
 		}
 
 		ipAddress := fmt.Sprintf("%d.%d.%d.%d", address[0], address[1], address[2], address[3])
@@ -62,10 +84,98 @@ func DetermineCIDR(octets int) int {
 	return octets * 8
 }
 
-// Crafting raw SYN Packet
-func CraftPacket() byte {
+func NewTCPHeader(data []byte) *TCPHeader {
+    var tcp TCPHeader
 
+    r := bytes.NewReader(data)
+    binary.Read(r, binary.BigEndian, &tcp.Source)
+    binary.Read(r, binary.BigEndian, &tcp.Destination)
+    binary.Read(r, binary.BigEndian, &tcp.SeqNum)
+    binary.Read(r, binary.BigEndian, &tcp.AckNum)
 
+    var mix uint16
+    binary.Read(r, binary.BigEndian, &mix)
+    tcp.DataOffset = byte(mix >> 12)
+    tcp.Reserved = byte(mix >> 9 & 7)
+    tcp.ECN = byte(mix >> 6 & 7)
+    tcp.Ctrl = byte(mix & 0x3f)
+
+    binary.Read(r, binary.BigEndian, &tcp.Window)
+    binary.Read(r, binary.BigEndian, &tcp.Checksum)
+    binary.Read(r, binary.BigEndian, &tcp.Urgent)
+
+    return &tcp
 }
 
+func (tcp *TCPHeader) HasFlag(flagBit byte) bool {
+    // bitwise AND to check if the bit is set.
+    return tcp.Ctrl&flagBit != 0
+}
 
+func (tcp *TCPHeader) Marshal() []byte {
+    buf := new(bytes.Buffer)
+
+    binary.Write(buf, binary.BigEndian, tcp.Source)
+    binary.Write(buf, binary.BigEndian, tcp.Destination)
+    binary.Write(buf, binary.BigEndian, tcp.SeqNum)
+    binary.Write(buf, binary.BigEndian, tcp.AckNum)
+
+    mix := uint16(tcp.DataOffset) << 12 |
+            uint16(tcp.Reserved) << 9 |
+            uint16(tcp.ECN) << 6 |
+            uint16(tcp.Ctrl)
+    
+    binary.Write(buf, binary.BigEndian, mix)
+    binary.Write(buf, binary.BigEndian, tcp.Window)
+    binary.Write(buf, binary.BigEndian, tcp.Checksum)
+    binary.Write(buf, binary.BigEndian, tcp.Urgent)
+
+    for _, option := range tcp.Options {
+        binary.Write(buf, binary.BigEndian, option.Kind)
+        if option.Length > 1 {
+            binary.Write(buf, binary.BigEndian, option.Length)
+            binary.Write(buf, binary.BigEndian, option.Data)
+        }
+    }
+    out := buf.Bytes()
+    pad := 20 - len(out)
+
+    for i := 0; i < pad; i++ {
+        out = append(out, 0)
+    }
+
+    return out
+}
+
+// Compute checksum
+func Csum(data []byte, srcip, dstip [4]byte) uint16 {
+
+    pseudoHeader := []byte{
+        srcip[0], srcip[1], srcip[2], srcip[3],
+        dstip[0], dstip[1], dstip[2], dstip[3],
+        0,
+        6,
+        0, byte(len(data)),
+    }
+
+    csum := make([]byte, 0, len(pseudoHeader) + len(data))
+    csum = append(csum, pseudoHeader...)
+    csum = append(csum, data...)
+
+    lenCsum := len(csum)
+    var nextWord uint16
+    var sum uint32
+    for i := 0; i + 1 < len(csum); i += 2 {
+        nextWord = uint16(csum[i]) << 8 | uint16(csum[i + 1])
+        sum += uint32(nextWord)
+    }
+
+    if lenCsum % 2 != 0 {
+        sum += uint32(csum[len(csum) - 1])
+    }
+
+    sum = (sum >> 16) + (sum & 0xffff)
+    sum = sum + (sum >> 16)
+
+    return uint16(^sum)
+}
