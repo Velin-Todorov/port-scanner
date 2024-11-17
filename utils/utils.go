@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 	"strconv"
 	// "time"
 	// "errors"
@@ -13,8 +14,8 @@ import (
 )
 
 type TCPHeader struct {
-	Source      uint16
-	Destination uint16
+	Source      uint32
+	Destination uint32
 	SeqNum      uint32
 	AckNum      uint32
 	DataOffset  uint8
@@ -178,4 +179,28 @@ func Csum(data []byte, srcip, dstip [4]byte) uint16 {
     sum = sum + (sum >> 16)
 
     return uint16(^sum)
+}
+
+func IPtoUint32(ip net.IP) uint32 {
+    ip = ip.To4()
+    
+    if ip == nil {
+        return 0
+    }
+
+    return uint32(ip[0]) << 24 | uint32(ip[1]) << 16 | uint32(ip[2]) << 8 | uint32(ip[3])
+}
+
+func GetSourceIP() (net.IP, error) {
+    conn, err := net.Dial("udp", "8.8.8.8:80")
+
+    if err != nil {
+        return nil, err
+    }
+
+    defer conn.Close()
+
+    localAddr := conn.LocalAddr().(*net.UDPAddr)
+
+    return localAddr.IP, nil
 }

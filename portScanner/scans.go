@@ -2,13 +2,17 @@ package portScanner
 
 import (
 	"fmt"
+	"log"
 	"math"
+	"math/rand"
 	"net"
+
+	// "net/netip"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
-    "syscall"
 
 	"port-scanner/utils"
 )
@@ -19,10 +23,9 @@ type Scanner interface {
 	SweepScan(hosts string, port string) ([]string, error)
 }
 
-type PortScanner struct {}
+type PortScanner struct{}
 
-
-func NewPortScanner() *PortScanner{
+func NewPortScanner() *PortScanner {
 	portScanner := new(PortScanner)
 	return portScanner
 }
@@ -116,7 +119,7 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 
 			octets := strings.Split(host, ".")
 
-            // Producer
+			// Producer
 			go func() {
 				utils.GenerateIPs(octets, ipCh)
 				close(ipCh)
@@ -130,10 +133,10 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 					defer wg.Done()
 					for ipAddress := range ipCh {
 						res, err := ps.SimpleScan(ipAddress, portAsString)
-                        if err != nil {
-                            resultCh <- err.Error()
-                            continue
-                        }
+						if err != nil {
+							resultCh <- err.Error()
+							continue
+						}
 						resultCh <- res
 					}
 				}()
@@ -144,7 +147,7 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 				close(resultCh)
 			}()
 
-			for result := range resultCh {	
+			for result := range resultCh {
 				openPorts = append(openPorts, result)
 			}
 
@@ -153,17 +156,16 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 			}
 			return openPorts, nil
 		} else if strings.Contains(host, "/") {
-            // CIDR hosts
+			// CIDR hosts
 			ipAddress, ipNet, _ := net.ParseCIDR(host)
 			mask, _ := ipNet.Mask.Size()
 			hostBits := 32 - mask
 			totalHostAddresses := (1 << hostBits) - 2
 			ipAddress4 := ipAddress.To4()
 
-
 			baseAddress := uint32(ipAddress4[0])<<24 | uint32(ipAddress4[1])<<16 | uint32(ipAddress4[2])<<8 | uint32(ipAddress4[3])
-			
-			for i := 0; i < totalHostAddresses; i++{
+
+			for i := 0; i < totalHostAddresses; i++ {
 				hostIp := baseAddress + uint32(i)
 
 				newAddress := net.IPv4(byte(hostIp>>24), byte((hostIp>>16)&0xFF), byte((hostIp>>8)&0xFF), byte(hostIp&0xFF))
@@ -171,9 +173,9 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 				openPorts = append(openPorts, scan)
 			}
 
-        } else {
+		} else {
 			// normal hosts
-			scan, _:= ps.SimpleScan(host, portAsString)
+			scan, _ := ps.SimpleScan(host, portAsString)
 			openPorts = append(openPorts, scan)
 		}
 	}
@@ -182,23 +184,93 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 }
 
 func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
-    var openPorts []string
+	var openPorts []string
 
-    // splitPorts := strings.Split(ports, ",")
-    // syscall.              
-    // for _, port := range splitPorts {
-        
-    // }
+	splitPorts := strings.Split(ports, ",")
+	parsedHost := net.ParseIP(host)
 
-    // craft syn pack
-    // send the syn pack
-    // check the response
-    // if we get syn/ack, then send a rst packet and mark the port as opened,
-    // otherwise, try one more time
-    // if it does not respond, then mark the port as filtered
+	if parsedHost == nil {
+		log.Fatalf("Failed to parse host: %s", host)
+		return nil, nil
+	}
 
-    
-    return openPorts, nil
+	// Spawn a goroutine per port
+	// goRoutines := len(splitPorts)
+	_ = len(splitPorts)
+
+	rawSocket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
+	if err != nil {
+		log.Fatalf("Failed to create raw socket: %v", err)
+	}
+
+	defer syscall.Close(rawSocket)
+
+	if err := syscall.SetsockoptInt(rawSocket, syscall.IPPROTO_IP, syscall.IP_HDRINCL, 1); err != nil {
+		log.Fatalf("Failed to add add IP Header")
+	}
+
+	srcIP, err := utils.GetSourceIP()
+
+	if err != nil {
+		log.Fatalf("Failed to obtain source IP")
+		return nil, err
+	}
+
+	for _, port := range splitPorts {
+		portAsInt, err := strconv.Atoi(port)
+
+		if err != nil {
+			log.Printf("Failed to parse port: %s", port)
+			continue
+		}
+
+		packet := utils.TCPHeader{
+			Source:      0xaa47, // Random port
+			Destination: uint32(portAsInt),
+			SeqNum:      rand.Uint32(),
+			AckNum:      0,
+			DataOffset:  5,
+			Reserved:    0,
+			ECN:         0,
+			Ctrl:        2, //SYN
+			Window:      0xaaaa,
+			Checksum:    0,
+			Urgent:      0,
+			Options:     []utils.TCPOption{},
+		}
+
+		data := packet.Marshal()
+		packet.Checksum = utils.Csum(data, [4]byte(srcIP), [4]byte(parsedHost))
+
+		fmt.Println(packet)
+
+		data = packet.Marshal()
+
+		destAddr := syscall.SockaddrInet4{
+			Port: portAsInt,
+		}
+
+		copy(destAddr.Addr[:], parsedHost.To4())
+
+		err = syscall.Sendto(rawSocket, data, 0, &destAddr)
+
+		if err != nil {
+			panic(err)
+		}
+
+	}
+
+	// send syn for go
+
+	// syscall.
+
+	// craft syn pack
+	// send the syn pack
+	// check the response
+	// if we get syn/ack, then send a rst packet and mark the port as opened,
+	// otherwise, try one more time
+	// if it does not respond, then mark the port as filtered
+
+	return openPorts, nil
 
 }
-

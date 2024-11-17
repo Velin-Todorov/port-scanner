@@ -89,8 +89,6 @@ var sweepScanCmd = &cobra.Command{
 			return
 		}
 
-		portScanner := portScanner.NewPortScanner()
-
 		port, err := cmd.Flags().GetInt("port")
 
 		if err != nil || port <= 0 {
@@ -98,6 +96,7 @@ var sweepScanCmd = &cobra.Command{
 			return
 		}
 
+		portScanner := portScanner.NewPortScanner()
 		res, err := portScanner.SweepScan(hosts, port)
 
 		if err != nil {
@@ -107,6 +106,26 @@ var sweepScanCmd = &cobra.Command{
 		for _, result := range res {
 			fmt.Println(result)
 		}
+	},
+}
+
+var synScanCmd = &cobra.Command{
+	Use:   "sscan",
+	Short: "Performs a syn scan",
+	Run: func(cmd *cobra.Command, args []string) {
+		host, err := cmd.Flags().GetString("host")
+		ports, err := cmd.Flags().GetString("ports")
+
+		if err != nil || len(host) == 0 || len(ports) == 0 {
+			fmt.Errorf("No hosts passed or ports passed")
+			return
+		}
+
+		portScanner := portScanner.NewPortScanner()
+		res, err := portScanner.SynScan(host, ports)
+
+		fmt.Println(res)
+		
 	},
 }
 
@@ -126,6 +145,10 @@ func init() {
 	sweepScanCmd.Flags().String("hosts", "", "Host to check for open ports")
 	sweepScanCmd.Flags().Int("port", 0, "Port to be checked if opened")
 
-	sweepScanCmd.MarkFlagRequired("hosts")
-	sweepScanCmd.MarkFlagRequired("port")
+	sweepScanCmd.MarkFlagRequired("host")
+	sweepScanCmd.MarkFlagRequired("ports")
+
+	rootCmd.AddCommand(synScanCmd)
+	synScanCmd.Flags().String("host", "", "Host to check for open ports")
+	synScanCmd.Flags().String("ports", "", "Port to be checked if opened")
 }
