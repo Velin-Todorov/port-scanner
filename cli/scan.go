@@ -99,13 +99,14 @@ var sweepScanCmd = &cobra.Command{
 		portScanner := portScanner.NewPortScanner()
 		res, err := portScanner.SweepScan(hosts, port)
 
+		fmt.Println(res)
 		if err != nil {
 			fmt.Printf("ERROR: %s", err.Error())
 		}
 
-		for _, result := range res {
-			fmt.Println(result)
-		}
+		// for _, _ := range res {
+		// 	// fmt.Println(result)
+		// }
 	},
 }
 

@@ -4,13 +4,24 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"log"
 	"math"
 	"net"
 	"strconv"
+	"strings"
 	// "time"
 	// "errors"
 	// "strings"
 	// "sync"
+)
+
+const (
+	FIN = 1  // 00 0001
+	SYN = 2  // 00 0010
+	RST = 4  // 00 0100
+	PSH = 8  // 00 1000
+	ACK = 16 // 01 0000
+	URG = 32 // 10 0000
 )
 
 type TCPHeader struct {
@@ -203,4 +214,48 @@ func GetSourceIP() (net.IP, error) {
     localAddr := conn.LocalAddr().(*net.UDPAddr)
 
     return localAddr.IP, nil
+}
+
+func To4byte(addr string) [4]byte {
+	parts := strings.Split(addr, ".")
+	b0, err := strconv.Atoi(parts[0])
+	if err != nil {
+		log.Fatalf("to4byte: %s (latency works with IPv4 addresses only, but not IPv6!)\n", err)
+	}
+	b1, _ := strconv.Atoi(parts[1])
+	b2, _ := strconv.Atoi(parts[2])
+	b3, _ := strconv.Atoi(parts[3])
+	return [4]byte{byte(b0), byte(b1), byte(b2), byte(b3)}
+}
+
+
+func ReceiveSynAck(localAddress, remoteAddress string) {
+	netaddr, err := net.ResolveIPAddr("ip4", localAddress)
+	if err != nil {
+		log.Fatalf("net.ResolveIPAddr: %s. %s\n", localAddress, netaddr)
+	}
+
+	conn, err := net.ListenIP("ip4:tcp", netaddr)
+	if err != nil {
+		log.Fatalf("ListenIP: %s\n", err)
+	}
+
+	for {
+		buf := make([]byte, 1024)
+		numRead, raddr, err := conn.ReadFrom(buf)
+		if err != nil {
+			log.Fatalf("ReadFrom: %s\n", err)
+		}
+		fmt.Println(raddr)
+		if raddr.String() != remoteAddress {
+			
+			// this is not the packet we are looking for
+			continue
+		}
+		tcp := NewTCPHeader(buf[:numRead])
+		fmt.Println(tcp.Ctrl)
+		if tcp.HasFlag(SYN) || (tcp.HasFlag(SYN) && tcp.HasFlag(ACK)) {
+			break
+		}
+	}
 }

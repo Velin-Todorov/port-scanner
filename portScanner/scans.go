@@ -11,8 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
+    "runtime"
 
 	"port-scanner/utils"
 )
@@ -113,24 +113,22 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 		// wildcard addresses
 		if strings.Contains(host, "*") {
 			bufferSize := int(math.Pow(256, float64(strings.Count(host, "*"))))
+			fmt.Println(bufferSize)
 
-			ipCh := make(chan string, bufferSize)
-			resultCh := make(chan string, bufferSize)
+			ipCh := make(chan string, 10)
+			resultCh := make(chan string, 10)
 
 			octets := strings.Split(host, ".")
 
 			// Producer
 			go func() {
 				utils.GenerateIPs(octets, ipCh)
-				close(ipCh)
 			}()
-
+            
+            wg.Add(bufferSize - 2)
 			// consumer
-			for i := 0; i < bufferSize; i++ {
-				wg.Add(1)
-
+			for i := 0; i < int(math.Pow(float64(runtime.NumCPU()), 3)); i++ {
 				go func() {
-					defer wg.Done()
 					for ipAddress := range ipCh {
 						res, err := ps.SimpleScan(ipAddress, portAsString)
 						if err != nil {
@@ -144,16 +142,19 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 
 			go func() {
 				wg.Wait()
+				close(ipCh)
 				close(resultCh)
 			}()
 
 			for result := range resultCh {
 				openPorts = append(openPorts, result)
+				wg.Done()
 			}
 
 			if len(openPorts) == 0 {
 				return nil, fmt.Errorf("no open ports on host %s", host)
 			}
+
 			return openPorts, nil
 		} else if strings.Contains(host, "/") {
 			// CIDR hosts
@@ -198,16 +199,13 @@ func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
 	// goRoutines := len(splitPorts)
 	_ = len(splitPorts)
 
-	rawSocket, err := syscall.Socket(syscall.AF_INET, syscall.SOCK_RAW, syscall.IPPROTO_TCP)
-	if err != nil {
-		log.Fatalf("Failed to create raw socket: %v", err)
-	}
+    addrs, err := net.LookupHost(host)
 
-	defer syscall.Close(rawSocket)
+    if err != nil {
+        log.Fatalf("Error resolving %s. %s\n", host, err)
+    }
 
-	if err := syscall.SetsockoptInt(rawSocket, syscall.IPPROTO_IP, syscall.IP_HDRINCL, 1); err != nil {
-		log.Fatalf("Failed to add add IP Header")
-	}
+    remoteAddr := addrs[0]
 
 	srcIP, err := utils.GetSourceIP()
 
@@ -240,27 +238,40 @@ func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
 		}
 
 		data := packet.Marshal()
-		packet.Checksum = utils.Csum(data, [4]byte(srcIP), [4]byte(parsedHost))
-
-		fmt.Println(packet)
+		packet.Checksum = utils.Csum(data, utils.To4byte(srcIP.String()), utils.To4byte(host))
 
 		data = packet.Marshal()
 
-		destAddr := syscall.SockaddrInet4{
-			Port: portAsInt,
-		}
+        conn, err := net.Dial("ip4:tcp", host)
 
-		copy(destAddr.Addr[:], parsedHost.To4())
+        if err != nil {
+            log.Fatalf("Dial: %s\n", err)
+        }
 
-		err = syscall.Sendto(rawSocket, data, 0, &destAddr)
+        numWrote, err := conn.Write(data)
+
+        if err != nil {
+            log.Fatalf("Write: %s\n", err)
+        }
+        if numWrote != len(data) {
+            log.Fatalf("Short write. Wrote %d/%d bytes\n", numWrote, len(data))
+        }
+    
+        conn.Close()
 
 		if err != nil {
 			panic(err)
 		}
+        
+        
 
+        utils.ReceiveSynAck(srcIP.String(), remoteAddr)
+
+        if err != nil {
+            panic(err)
+        }
+       
 	}
-
-	// send syn for go
 
 	// syscall.
 
