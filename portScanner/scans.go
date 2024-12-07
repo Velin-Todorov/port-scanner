@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"math/rand"
 	"net"
 
 	// "net/netip"
@@ -185,9 +184,12 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 }
 
 func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
-	var openPorts []string
+	// var openPorts []string    
+    var wg sync.WaitGroup
+    // results := make(chan string, 1024)
+	wg.Add(1)
 
-	splitPorts := strings.Split(ports, ",")
+	// splitPorts := strings.Split(ports, ",")
 	parsedHost := net.ParseIP(host)
 
 	if parsedHost == nil {
@@ -195,93 +197,5 @@ func (ps *PortScanner) SynScan(host, ports string) ([]string, error) {
 		return nil, nil
 	}
 
-	// Spawn a goroutine per port
-	// goRoutines := len(splitPorts)
-	_ = len(splitPorts)
-
-    addrs, err := net.LookupHost(host)
-
-    if err != nil {
-        log.Fatalf("Error resolving %s. %s\n", host, err)
-    }
-
-    remoteAddr := addrs[0]
-
-	srcIP, err := utils.GetSourceIP()
-
-	if err != nil {
-		log.Fatalf("Failed to obtain source IP")
-		return nil, err
-	}
-
-	for _, port := range splitPorts {
-		portAsInt, err := strconv.Atoi(port)
-
-		if err != nil {
-			log.Printf("Failed to parse port: %s", port)
-			continue
-		}
-
-		packet := utils.TCPHeader{
-			Source:      0xaa47, // Random port
-			Destination: uint32(portAsInt),
-			SeqNum:      rand.Uint32(),
-			AckNum:      0,
-			DataOffset:  5,
-			Reserved:    0,
-			ECN:         0,
-			Ctrl:        2, //SYN
-			Window:      0xaaaa,
-			Checksum:    0,
-			Urgent:      0,
-			Options:     []utils.TCPOption{},
-		}
-
-		data := packet.Marshal()
-		packet.Checksum = utils.Csum(data, utils.To4byte(srcIP.String()), utils.To4byte(host))
-
-		data = packet.Marshal()
-
-        conn, err := net.Dial("ip4:tcp", host)
-
-        if err != nil {
-            log.Fatalf("Dial: %s\n", err)
-        }
-
-        numWrote, err := conn.Write(data)
-
-        if err != nil {
-            log.Fatalf("Write: %s\n", err)
-        }
-        if numWrote != len(data) {
-            log.Fatalf("Short write. Wrote %d/%d bytes\n", numWrote, len(data))
-        }
-    
-        conn.Close()
-
-		if err != nil {
-			panic(err)
-		}
-        
-        
-
-        utils.ReceiveSynAck(srcIP.String(), remoteAddr)
-
-        if err != nil {
-            panic(err)
-        }
-       
-	}
-
-	// syscall.
-
-	// craft syn pack
-	// send the syn pack
-	// check the response
-	// if we get syn/ack, then send a rst packet and mark the port as opened,
-	// otherwise, try one more time
-	// if it does not respond, then mark the port as filtered
-
-	return openPorts, nil
-
+    return nil, nil
 }
