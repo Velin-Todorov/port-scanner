@@ -1,0 +1,28 @@
+version: '3'
+
+services:
+  web1:
+    image: nginx
+    container_name: web1
+    ports:
+      - "8080:80"
+
+  web2:
+    image: nginx
+    container_name: web2
+    ports:
+      - "8081:80"
+
+  nc-server:
+    image: alpine
+    container_name: nc-server
+    command: ["nc", "-l", "12345"]
+    ports:
+      - "12345:12345"
+
+  nc-server2:
+    image: alpine
+    container_name: nc-server2
+    command: ["nc", "-l", "54321"]
+    ports:
+      - "54321:54321"
