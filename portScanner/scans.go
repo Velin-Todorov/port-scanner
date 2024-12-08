@@ -6,12 +6,11 @@ import (
 	"math"
 	"net"
 
-	// "net/netip"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-    "runtime"
 
 	"port-scanner/utils"
 )
@@ -124,7 +123,8 @@ func (ps *PortScanner) SweepScan(hosts string, port int) ([]string, error) {
 				utils.GenerateIPs(octets, ipCh)
 			}()
             
-            wg.Add(bufferSize - 2)
+            // -2 because of broadcast address and subnet address
+			wg.Add(bufferSize - 2)
 			// consumer
 			for i := 0; i < int(math.Pow(float64(runtime.NumCPU()), 3)); i++ {
 				go func() {

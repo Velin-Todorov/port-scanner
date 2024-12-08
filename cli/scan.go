@@ -115,13 +115,18 @@ var synScanCmd = &cobra.Command{
 	Short: "Performs a syn scan",
 	Run: func(cmd *cobra.Command, args []string) {
 		host, err := cmd.Flags().GetString("host")
-		ports, err := cmd.Flags().GetString("ports")
 
-		if err != nil || len(host) == 0 || len(ports) == 0 {
-			fmt.Errorf("No hosts passed or ports passed")
-			return
+		if err != nil {
+			fmt.Errorf("No hosts passed")
 		}
 
+		ports, err := cmd.Flags().GetStringArray("ports")
+
+		if err != nil {
+			fmt.Errorf("No ports passed")
+		}
+
+		fmt.Println(ports)
 		portScanner := portScanner.NewPortScanner()
 		res, err := portScanner.SynScan(host, ports)
 
@@ -151,5 +156,5 @@ func init() {
 
 	rootCmd.AddCommand(synScanCmd)
 	synScanCmd.Flags().String("host", "", "Host to check for open ports")
-	synScanCmd.Flags().String("ports", "", "Port to be checked if opened")
+	synScanCmd.Flags().StringArray("ports", []string{}, "Ports to be checked if opened")
 }

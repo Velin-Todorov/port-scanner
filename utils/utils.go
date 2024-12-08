@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+
 )
 
 func determineWildcards(octets []string) []int {
